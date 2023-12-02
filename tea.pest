@@ -10,55 +10,56 @@ LeftSquare  = { "[" }
 RightSquare = { "]" }
 LeftCurly   = { "{" }
 RightCurly  = { "}" }
-Comma        = { "," }
-Arrow        = { Ignore ~ "->" ~ Ignore }
-Tick         = { "'" }
-Dot          = { "." }
-Let          = { "let" }
-Colon        = { ":" }
-Equals       = { "=" }
-Semicolon    = { ";" }
-Underscore   = { "_" }
-Pipe         = { "|" }
-Base         = { "base" }
+Comma       = { "," }
+Arrow       = { Ignore ~ "->" ~ Ignore }
+Tick        = { "'" }
+Dot         = { "." }
+Let         = { "let" }
+Colon       = { ":" }
+Equals      = { "=" }
+Semicolon   = { ";" }
+Underscore  = { "_" }
+Pipe        = { "|" }
+Base        = { "base" }
+Pub         = { "pub" }
 
 Ident = { Alpha ~ (Alpha | Digit)* }
 Path  = { Ident ~ (DoubleColon ~ Ident)* }
 
-Args                     = { SumType | ProductType | "type" | "module" | Path | HoleType | LeftRound ~ Type ~ RightRound }
-FunctionType            = { Args ~ Arrow ~ Type }
-SumField                = { Ident ~ Space ~ Type? }
-SumType                 = { LeftSquare ~ SumField? ~ (Comma ~ Ignore ~ SumField)* ~ RightSquare }
+Args                   = { SumType | ProductType | "type" | "module" | Path | HoleType | LeftRound ~ Type ~ RightRound }
+FunctionType           = { Args ~ Arrow ~ Type }
+SumField               = { Ident ~ Space ~ Type? }
+SumType                = { LeftSquare ~ SumField? ~ (Comma ~ Ignore ~ SumField)* ~ RightSquare }
 LabelledProductField   = { Ident ~ Space ~ Type }
 UnlabelledProductField = { Type }
 LabelledProductType    = { LeftCurly ~ LabelledProductField? ~ (Comma ~ Ignore ~ LabelledProductField)* ~ RightCurly }
 UnlabelledProductType  = { LeftCurly ~ UnlabelledProductField? ~ (Comma ~ Ignore ~ UnlabelledProductField)* ~ RightCurly }
-ProductType             = { UnlabelledProductType | LabelledProductType }
-HoleType                = { Tick ~ Ident }
-Type                     = { FunctionType | SumType | ProductType | "type" | "module" | Path | HoleType }
+ProductType            = { UnlabelledProductType | LabelledProductType }
+HoleType               = { Tick ~ Ident }
+Type                   = { FunctionType | SumType | ProductType | "type" | "module" | Path | HoleType }
 
 Call = { Path ~ LeftRound ~ Expr? ~ (Comma ~ Ignore ~ Expr)* ~ RightRound }
 
-Quote = _{"\""}
-String  = { Quote ~ (!Quote ~ ANY)* ~ Quote }
-Integer = { Digit+ }
-Decimal = { Digit+ ~ "." ~ Digit+ }
+Quote   = _{ "\"" }
+String  =  { Quote ~ (!Quote ~ ANY)* ~ Quote }
+Integer =  { Digit+ }
+Decimal =  { Digit+ ~ "." ~ Digit+ }
 
-SumDecl                      = { Ident ~ Expr }
+SumDecl                    = { Ident ~ Expr }
 LabelledProductDeclField   = { Ident ~ Space ~ Expr }
-LabelledProductDecl         = { LeftCurly ~ LabelledProductDeclField ~ (Comma ~ Ignore ~ LabelledProductDeclField)* ~ RightCurly }
+LabelledProductDecl        = { LeftCurly ~ LabelledProductDeclField ~ (Comma ~ Ignore ~ LabelledProductDeclField)* ~ RightCurly }
 UnlabelledProductDeclField = { Expr }
-UnlabelledProductDecl       = { LeftCurly ~ UnlabelledProductDeclField ~ (Comma ~ Ignore ~ UnlabelledProductDeclField)* ~ RightCurly }
-ProductDecl                  = { UnlabelledProductDecl | LabelledProductDecl }
-Part                          = { String | Decimal | Integer | Function | ProductDecl | Call | Type }
-Expr                          = { Part ~ (Whitespace ~ Dot ~ Part)* }
+UnlabelledProductDecl      = { LeftCurly ~ UnlabelledProductDeclField ~ (Comma ~ Ignore ~ UnlabelledProductDeclField)* ~ RightCurly }
+ProductDecl                = { UnlabelledProductDecl | LabelledProductDecl }
+Part                       = { String | Decimal | Integer | Function | ProductDecl | Call | Type }
+Expr                       = { Part ~ (Whitespace ~ Dot ~ Part)* }
 
 UnlabelledDestructureField = { Assignment }
-UnlabelledDestructure       = { (Type | Underscore) ~ LeftCurly ~ UnlabelledDestructureField ~ (Comma ~ Ignore ~ UnlabelledDestructureField)* ~ RightCurly }
+UnlabelledDestructure      = { (Type | Underscore) ~ LeftCurly ~ UnlabelledDestructureField ~ (Comma ~ Ignore ~ UnlabelledDestructureField)* ~ RightCurly }
 LabelledDestructureField   = { Ident ~ Ignore ~ Assignment }
-LabelledDestructure         = { (Type | Underscore) ~ LeftCurly ~ LabelledDestructureField ~ (Comma ~ Ignore ~ LabelledDestructureField)* ~ RightCurly }
-SumMatch                    = { Path ~ Space ~ Assignment }
-Assignment                   = { SumMatch | Ident | UnlabelledDestructure | LabelledDestructure | Underscore }
+LabelledDestructure        = { (Type | Underscore) ~ LeftCurly ~ LabelledDestructureField ~ (Comma ~ Ignore ~ LabelledDestructureField)* ~ RightCurly }
+SumMatch                   = { Path ~ Space ~ Assignment }
+Assignment                 = { SumMatch | Ident ~ Colon ~ Ignore ~ Type | Ident | UnlabelledDestructure | LabelledDestructure | Underscore }
 
 Whitespace = _{ ("\n" | " ")* }
 
@@ -70,9 +71,11 @@ Function = { Pipe ~ Assignment? ~ Pipe ~ Ignore ~ Body }
 
 // Let a: Vec2 = {0, 0};
 Statement = {
-    Let ~ Space ~ Base ~ Space ~ Ident ~ Colon ~ Ignore ~ Type ~ Semicolon
-  | Let ~ Space ~ Assignment ~ Colon ~ Ignore ~ Type ~ Ignore ~ Equals ~ Ignore ~ Expr ~ Semicolon
+    (Pub ~ Space)? ~ Let ~ Space ~ Ident ~ Colon ~ Ignore ~ Type ~ Ignore ~ Equals ~ Ignore ~ LeftCurly ~ Module ~ RightCurly ~ Semicolon
+  | (Pub ~ Space)? ~ Let ~ Space ~ Base ~ Space ~ Ident ~ Colon ~ Ignore ~ Type ~ Semicolon
+  | (Pub ~ Space)? ~ Let ~ Space ~ Assignment ~ Ignore ~ Equals ~ Ignore ~ Expr ~ Semicolon
   | Expr ~ Semicolon
 }
 
-File = { (Whitespace ~ Statement ~ Whitespace)* }
+Module = { (Whitespace ~ Statement ~ Whitespace)* }
+File   = { Module }

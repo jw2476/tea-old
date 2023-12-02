@@ -1,3 +1,4 @@
+mod lexer;
 mod parser;
 use clap::Parser;
 
@@ -9,7 +10,7 @@ struct Cli {
 
 #[derive(Parser)]
 struct Build {
-    file: String
+    file: String,
 }
 
 #[derive(clap::Subcommand)]
@@ -18,18 +19,18 @@ enum Commands {
 }
 
 fn build(build: Build) -> anyhow::Result<()> {
-   let file = std::fs::read(build.file)?;
-   let input = String::from_utf8(file)?;
-   let parsed = parser::parse(&input)?;
-   println!("{:?}", parsed);
+    let file = std::fs::read(build.file)?;
+    let input = String::from_utf8(file)?;
+    let tokens: Vec<lexer::Token> = lexer::tokenize(&input).collect();
+    println!("{:?}", tokens);
 
-   Ok(())
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Build(b) => build(b)? 
+        Commands::Build(b) => build(b)?,
     };
 
     Ok(())
