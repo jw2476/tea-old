@@ -30,9 +30,17 @@ fn build(build: Build) -> anyhow::Result<()> {
     if !errors.is_empty() {
         let ctx = error::Context::new(file);
         ctx.print_errors(&errors);
+        return Ok(());
     }
-
-    println!("{:?}", tokens);
+    let ast = parser::parse(tokens, &mut errors);
+    if !errors.is_empty() {
+        let ctx = error::Context::new(file);
+        ctx.print_errors(&errors);
+        return Ok(());
+    }
+    if let Some(ast) = ast {
+        println!("{ast}")
+    }
 
     Ok(())
 }

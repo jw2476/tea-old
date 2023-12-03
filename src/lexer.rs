@@ -1,5 +1,3 @@
-use std::{fmt::Display, iter::repeat};
-
 use crate::{
     error::{Error, MessageBuilder, MessageKind},
     file::File,
@@ -14,93 +12,93 @@ pub struct Span {
 // Brackets
 #[derive(Clone, Debug)]
 pub struct LeftRound {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct RightRound {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct LeftSquare {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct RightSquare {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct LeftCurly {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct RightCurly {
-    span: Span,
+    pub span: Span,
 }
 
 // Symbols
 #[derive(Clone, Debug)]
 pub struct Comma {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct DoubleColon {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Arrow {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Tick {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Dot {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Colon {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Equals {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Semicolon {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Pipe {
-    span: Span,
+    pub span: Span,
 }
 
 // Keywords
 #[derive(Clone, Debug)]
 pub struct Let {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Base {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Pub {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Type {
-    span: Span,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Module {
-    span: Span,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug)]
 pub struct Ident {
-    span: Span,
-    data: String,
+    pub span: Span,
+    pub data: String,
 }
 #[derive(Clone, Debug)]
 pub enum LiteralKind {
@@ -110,9 +108,9 @@ pub enum LiteralKind {
 }
 #[derive(Clone, Debug)]
 pub struct Literal {
-    span: Span,
-    kind: LiteralKind,
-    data: String,
+    pub span: Span,
+    pub kind: LiteralKind,
+    pub data: String,
 }
 
 #[derive(Clone, Debug)]
@@ -142,6 +140,181 @@ pub enum Token {
 
     Ident(Ident),
     Literal(Literal),
+}
+
+impl Token {
+    pub fn as_left_round(&self) -> Option<&LeftRound> {
+        if let Self::LeftRound(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_right_round(&self) -> Option<&RightRound> {
+        if let Self::RightRound(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+    pub fn as_left_square(&self) -> Option<&LeftSquare> {
+        if let Self::LeftSquare(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+    pub fn as_right_square(&self) -> Option<&RightSquare> {
+        if let Self::RightSquare(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+    pub fn as_left_curly(&self) -> Option<&LeftCurly> {
+        if let Self::LeftCurly(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_right_curly(&self) -> Option<&RightCurly> {
+        if let Self::RightCurly(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_comma(&self) -> Option<&Comma> {
+        if let Self::Comma(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_arrow(&self) -> Option<&Arrow> {
+        if let Self::Arrow(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_tick(&self) -> Option<&Tick> {
+        if let Self::Tick(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_dot(&self) -> Option<&Dot> {
+        if let Self::Dot(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_equals(&self) -> Option<&Equals> {
+        if let Self::Equals(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_pipe(&self) -> Option<&Pipe> {
+        if let Self::Pipe(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_colon(&self) -> Option<&Colon> {
+        if let Self::Colon(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_double_colon(&self) -> Option<&DoubleColon> {
+        if let Self::DoubleColon(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_semicolon(&self) -> Option<&Semicolon> {
+        if let Self::Semicolon(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_let(&self) -> Option<&Let> {
+        if let Self::Let(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_base(&self) -> Option<&Base> {
+        if let Self::Base(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_pub(&self) -> Option<&Pub> {
+        if let Self::Pub(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_type(&self) -> Option<&Type> {
+        if let Self::Type(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_module(&self) -> Option<&Module> {
+        if let Self::Module(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_ident(&self) -> Option<&Ident> {
+        if let Self::Ident(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_literal(&self) -> Option<&Literal> {
+        if let Self::Literal(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
 }
 
 pub struct UnknownCharacter {
@@ -239,10 +412,6 @@ impl<'a> Cursor<'a> {
         self.chars.get(self.index).copied()
     }
 
-    pub fn second(&self) -> Option<char> {
-        self.chars.get(self.index + 1).copied()
-    }
-
     pub fn next(&mut self) -> Option<char> {
         let r = self.chars.get(self.index);
         if r.is_some() {
@@ -259,23 +428,8 @@ impl<'a> Cursor<'a> {
         c == search
     }
 
-    fn line_offset(&self, index: usize) -> (usize, usize) {
-        let line = self.chars[0..index].iter().filter(|c| **c == '\n').count();
-        let offset = index
-            - self.chars[0..index]
-                .iter()
-                .enumerate()
-                .filter(|(_, c)| **c == '\n')
-                .fold(0, |_, (i, _)| i);
-        (line + 1, offset + 1)
-    }
-
     fn error(&mut self, error: LexicalError) {
         self.errors.push(Box::new(error));
-    }
-
-    pub fn success(&self) -> bool {
-        self.errors.is_empty()
     }
 
     pub fn get(&mut self) -> Option<Token> {
