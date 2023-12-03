@@ -1,9 +1,14 @@
-use std::iter::repeat;
+use std::{fmt::Display, iter::repeat};
+
+use crate::{
+    error::{Error, MessageBuilder, MessageKind},
+    file::File,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Span {
-    from: usize,
-    to: usize,
+    pub from: usize,
+    pub to: usize,
 }
 
 // Brackets
@@ -139,16 +144,94 @@ pub enum Token {
     Literal(Literal),
 }
 
-pub struct Cursor {
-    index: usize,
-    chars: Vec<char>,
+pub struct UnknownCharacter {
+    span: Span,
+    c: char,
 }
 
-impl Cursor {
-    pub fn new(input: &str) -> Self {
+impl Error for UnknownCharacter {
+    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> MessageBuilder<'a> {
+        ctx.start(
+            MessageKind::Error,
+            &format!("Unknown character `{}`", self.c),
+            self.span.from,
+        )
+        .print_line(self.span.from)
+        .print_point(self.span)
+    }
+}
+
+pub struct MissingArrowHead {
+    span: Span,
+}
+
+impl Error for MissingArrowHead {
+    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> MessageBuilder<'a> {
+        ctx.start(MessageKind::Error, "Missing arrow head", self.span.from)
+            .print_line(self.span.from)
+            .print_point(self.span)
+    }
+}
+
+pub struct UnterminatedString {
+    opening: Span,
+    eof: Span,
+}
+
+impl Error for UnterminatedString {
+    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> MessageBuilder<'a> {
+        ctx.start(MessageKind::Error, "Missing closing \"", self.eof.from)
+            .print_line(self.eof.from)
+            .print_point(self.eof)
+    }
+}
+
+pub struct TooManyDecimalPoints {
+    span: Span,
+}
+
+impl Error for TooManyDecimalPoints {
+    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> MessageBuilder<'a> {
+        ctx.start(
+            MessageKind::Error,
+            "Too many decimal points in number literal",
+            self.span.from,
+        )
+        .print_line(self.span.from)
+        .print_point(self.span)
+    }
+}
+
+pub enum LexicalError {
+    UnknownCharacter(UnknownCharacter),
+    MissingArrowHead(MissingArrowHead),
+    UnterminatedString(UnterminatedString),
+    TooManyDecimalPoints(TooManyDecimalPoints),
+}
+
+impl Error for LexicalError {
+    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> MessageBuilder<'a> {
+        match self {
+            Self::UnknownCharacter(inner) => inner.print_error(ctx),
+            Self::MissingArrowHead(inner) => inner.print_error(ctx),
+            Self::UnterminatedString(inner) => inner.print_error(ctx),
+            Self::TooManyDecimalPoints(inner) => inner.print_error(ctx),
+        }
+    }
+}
+
+pub struct Cursor<'a> {
+    index: usize,
+    chars: Vec<char>,
+    errors: &'a mut Vec<Box<dyn Error>>,
+}
+
+impl<'a> Cursor<'a> {
+    pub fn new(input: &str, errors: &'a mut Vec<Box<dyn Error>>) -> Self {
         Self {
             index: 0,
             chars: input.chars().collect(),
+            errors,
         }
     }
 
@@ -178,18 +261,21 @@ impl Cursor {
 
     fn line_offset(&self, index: usize) -> (usize, usize) {
         let line = self.chars[0..index].iter().filter(|c| **c == '\n').count();
-        let offset = index - self.chars[0..index].iter().enumerate().filter(|(i, c)| **c == '\n').fold(0, |_, (i, _)| i);
+        let offset = index
+            - self.chars[0..index]
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| **c == '\n')
+                .fold(0, |_, (i, _)| i);
         (line + 1, offset + 1)
     }
 
-    fn error(&self, span: Span, message: &str) {
-        let (line, offset) = self.line_offset(span.from);
-        println!("error: {message}");
-        println!("{line} | {}", self.chars.split(|c| *c == '\n').nth(line - 1).unwrap().iter().cloned().collect::<String>());
-        let first_padding = repeat(' ').take((line as f32).log(10.0).floor() as usize + 1).collect::<String>();
-        let second_padding = repeat(' ').take(offset).collect::<String>();
-        let pointers = repeat('^').take(span.to - span.from).collect::<String>();
-        println!("{} | {}{}", first_padding, second_padding, pointers);
+    fn error(&mut self, error: LexicalError) {
+        self.errors.push(Box::new(error));
+    }
+
+    pub fn success(&self) -> bool {
+        self.errors.is_empty()
     }
 
     pub fn get(&mut self) -> Option<Token> {
@@ -224,7 +310,9 @@ impl Cursor {
                 if self.match_next('>') {
                     Token::Arrow(Arrow { span: span(self) })
                 } else {
-                    self.error(span(self), "Missing arrow head: >");
+                    self.error(LexicalError::MissingArrowHead(MissingArrowHead {
+                        span: span(self),
+                    }));
                     return self.get();
                 }
             }
@@ -232,21 +320,25 @@ impl Cursor {
                 let mut data = String::new();
                 while !self.match_next('"') {
                     let Some(c) = self.next() else {
-                        self.error(
-                            Span {
+                        self.error(LexicalError::UnterminatedString(UnterminatedString {
+                            opening: Span { from, to: from + 1 },
+                            eof: Span {
                                 from: self.index,
                                 to: self.index + 1,
                             },
-                            "Missing closing \"",
-                        );
+                        }));
                         return self.get();
                     };
 
                     data.push(c);
                 }
 
-                Token::Literal(Literal { span: span(self), kind: LiteralKind::String, data })
-            },
+                Token::Literal(Literal {
+                    span: span(self),
+                    kind: LiteralKind::String,
+                    data,
+                })
+            }
             c if c.is_digit(10) => {
                 let mut data = String::new();
                 data.push(c);
@@ -256,7 +348,15 @@ impl Cursor {
                 while self.first()?.is_digit(10) || self.first()? == '.' {
                     let c = self.next()?;
                     if c == '.' {
-                        if decimal { self.error(Span { from: self.index, to: self.index }, "More than one decimal point in number"); return self.get() }
+                        if decimal {
+                            self.error(LexicalError::TooManyDecimalPoints(TooManyDecimalPoints {
+                                span: Span {
+                                    from: self.index - 1,
+                                    to: self.index,
+                                },
+                            }));
+                            return self.get();
+                        }
                         decimal = true
                     }
                     data.push(c);
@@ -264,10 +364,14 @@ impl Cursor {
 
                 Token::Literal(Literal {
                     span: span(self),
-                    kind: if decimal { LiteralKind::Decimal } else { LiteralKind::Integer },
-                    data
+                    kind: if decimal {
+                        LiteralKind::Decimal
+                    } else {
+                        LiteralKind::Integer
+                    },
+                    data,
                 })
-            },
+            }
             c if c.is_alphabetic() => {
                 let mut data = String::new();
                 data.push(c);
@@ -276,21 +380,33 @@ impl Cursor {
                     data.push(self.next()?)
                 }
 
-                Token::Ident(Ident { span: span(self), data })
+                Token::Ident(Ident {
+                    span: span(self),
+                    data,
+                })
             }
-            ' ' | '\n' => return self.get(), 
-            c => { self.error(span(self), &format!("Unknown character: {c}")); return self.get(); }
+            ' ' | '\n' => return self.get(),
+            c => {
+                self.error(LexicalError::UnknownCharacter(UnknownCharacter {
+                    span: span(self),
+                    c,
+                }));
+                return self.get();
+            }
         };
 
         Some(token)
     }
 
-    pub fn iter(mut self) -> impl Iterator<Item = Token> {
+    pub fn iter(mut self) -> impl Iterator<Item = Token> + 'a {
         std::iter::from_fn(move || self.get())
     }
 }
 
-pub fn tokenize(input: &str) -> impl Iterator<Item = Token> {
-    let cursor = Cursor::new(input);
+pub fn tokenize<'a>(
+    file: &File,
+    errors: &'a mut Vec<Box<dyn Error>>,
+) -> impl Iterator<Item = Token> + 'a {
+    let cursor = Cursor::new(&file.content, errors);
     cursor.iter()
 }

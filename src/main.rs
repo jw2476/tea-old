@@ -1,6 +1,10 @@
+mod error;
+mod file;
 mod lexer;
 mod parser;
 use clap::Parser;
+
+use crate::file::FileRegistry;
 
 #[derive(Parser)]
 struct Cli {
@@ -19,9 +23,15 @@ enum Commands {
 }
 
 fn build(build: Build) -> anyhow::Result<()> {
-    let file = std::fs::read(build.file)?;
-    let input = String::from_utf8(file)?;
-    let tokens: Vec<lexer::Token> = lexer::tokenize(&input).collect();
+    let mut file_registry = FileRegistry::new();
+    let file = file_registry.open(build.file)?;
+    let mut errors = Vec::new();
+    let tokens: Vec<lexer::Token> = lexer::tokenize(file, &mut errors).collect();
+    if !errors.is_empty() {
+        let ctx = error::Context::new(file);
+        ctx.print_errors(&errors);
+    }
+
     println!("{:?}", tokens);
 
     Ok(())
