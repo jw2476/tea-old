@@ -26,7 +26,7 @@ fn build(build: Build) -> anyhow::Result<()> {
     let mut file_registry = FileRegistry::new();
     let file = file_registry.open(build.file)?;
     let mut errors = Vec::new();
-    let tokens: Vec<lexer::Token> = lexer::tokenize(file, &mut errors).collect();
+    let tokens: Vec<lexer::Token> = lexer::tokenize(file, &mut errors);
     if !errors.is_empty() {
         let ctx = error::Context::new(file);
         ctx.print_errors(&errors);

@@ -114,6 +114,11 @@ pub struct Literal {
 }
 
 #[derive(Clone, Debug)]
+pub struct EOF {
+    span: Span,
+}
+
+#[derive(Clone, Debug)]
 pub enum Token {
     LeftRound(LeftRound),
     RightRound(RightRound),
@@ -140,6 +145,8 @@ pub enum Token {
 
     Ident(Ident),
     Literal(Literal),
+
+    EOF(EOF),
 }
 
 impl Token {
@@ -313,6 +320,45 @@ impl Token {
             Some(token)
         } else {
             None
+        }
+    }
+
+    pub fn as_eof(&self) -> Option<&EOF> {
+        if let Self::EOF(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        match self {
+            Self::LeftRound(inner) => inner.span,
+            Self::RightRound(inner) => inner.span,
+            Self::LeftSquare(inner) => inner.span,
+            Self::RightSquare(inner) => inner.span,
+            Self::LeftCurly(inner) => inner.span,
+            Self::RightCurly(inner) => inner.span,
+
+            Self::Comma(inner) => inner.span,
+            Self::DoubleColon(inner) => inner.span,
+            Self::Tick(inner) => inner.span,
+            Self::Dot(inner) => inner.span,
+            Self::Colon(inner) => inner.span,
+            Self::Equals(inner) => inner.span,
+            Self::Semicolon(inner) => inner.span,
+            Self::Pipe(inner) => inner.span,
+            Self::Arrow(inner) => inner.span,
+
+            Self::Let(inner) => inner.span,
+            Self::Base(inner) => inner.span,
+            Self::Pub(inner) => inner.span,
+            Self::Type(inner) => inner.span,
+            Self::Module(inner) => inner.span,
+
+            Self::Ident(inner) => inner.span,
+            Self::Literal(inner) => inner.span,
+            Self::EOF(inner) => inner.span,
         }
     }
 }
@@ -557,10 +603,14 @@ impl<'a> Cursor<'a> {
     }
 }
 
-pub fn tokenize<'a>(
-    file: &File,
-    errors: &'a mut Vec<Box<dyn Error>>,
-) -> impl Iterator<Item = Token> + 'a {
+pub fn tokenize<'a>(file: &File, errors: &'a mut Vec<Box<dyn Error>>) -> Vec<Token> {
     let cursor = Cursor::new(&file.content, errors);
-    cursor.iter()
+    let mut tokens = cursor.iter().collect::<Vec<Token>>();
+    tokens.push(Token::EOF(EOF {
+        span: Span {
+            from: file.content.len() - 2,
+            to: file.content.len() - 1,
+        },
+    }));
+    tokens
 }
