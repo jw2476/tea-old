@@ -3,8 +3,9 @@ use std::{fmt::Display, iter::Sum};
 use crate::{
     error::{Error, MessageKind},
     lexer::{
-        Arrow, Comma, DoubleColon, Ident, LeftCurly, LeftRound, LeftSquare, RightCurly, RightRound,
-        RightSquare, Span, Tick, Token,
+        Arrow, Base, Colon, Comma, Dot, DoubleColon, Equals, Ident, LeftCurly, LeftRound,
+        LeftSquare, Let, Literal, LiteralKind, Pipe, RightCurly, RightRound, RightSquare,
+        Semicolon, Span, Tick, Token, Underscore,
     },
 };
 
@@ -66,22 +67,6 @@ pub trait Parser: Sized {
     }
 }
 
-pub struct PathEndsWithDoubleColon {
-    double_colon: DoubleColon,
-}
-
-impl Error for PathEndsWithDoubleColon {
-    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> crate::error::MessageBuilder<'a> {
-        ctx.start(
-            MessageKind::Error,
-            "Path cannot end in a double colon",
-            self.double_colon.span.from,
-        )
-        .print_line(self.double_colon.span.from)
-        .print_point(self.double_colon.span)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct Path {
     parts: Vec<Ident>,
@@ -112,30 +97,9 @@ impl Parser for Path {
             };
             path.separators.push(separator);
 
-            let Some(part) = tokens.match_next(Token::as_ident) else {
-                tokens.error(PathEndsWithDoubleColon {
-                    double_colon: path.separators.last().unwrap().clone(),
-                });
-                return None;
-            };
+            let part = tokens.match_next(Token::as_ident)?;
             path.parts.push(part)
         }
-    }
-}
-
-pub struct MissingReturnType {
-    arrow: Arrow,
-}
-
-impl Error for MissingReturnType {
-    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> crate::error::MessageBuilder<'a> {
-        ctx.start(
-            MessageKind::Error,
-            "Function type missing return type",
-            self.arrow.span.from,
-        )
-        .print_line(self.arrow.span.from)
-        .print_point(self.arrow.span)
     }
 }
 
@@ -155,10 +119,7 @@ impl Parser for FunctionType {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
         let args = Args::parse(tokens)?;
         let arrow = tokens.match_next(Token::as_arrow)?;
-        let Some(return_type) = Type::parse(tokens) else {
-            tokens.error(MissingReturnType { arrow });
-            return None;
-        };
+        let return_type = Type::parse(tokens)?;
         Some(Self {
             args,
             arrow,
@@ -167,47 +128,11 @@ impl Parser for FunctionType {
     }
 }
 
-pub struct EmptySumType {
-    span: Span,
-}
-
-impl Error for EmptySumType {
-    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> crate::error::MessageBuilder<'a> {
-        ctx.start(
-            MessageKind::Error,
-            "Sum type has no variants",
-            self.span.from,
-        )
-        .print_line(self.span.from)
-        .print_point(self.span)
-    }
-}
-
-pub struct ExpectedIdent {
-    span: Span,
-}
-
-impl Error for ExpectedIdent {
-    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> crate::error::MessageBuilder<'a> {
-        ctx.start(MessageKind::Error, "Expected identifier", self.span.from)
-            .print_line(self.span.from)
-            .print_point(self.span)
-    }
-}
-
 pub struct SumTypeField(Ident, Option<Box<Type>>);
 
 impl Parser for SumTypeField {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
-        let Some(ident) = tokens.match_next(Token::as_ident) else {
-            tokens.error(ExpectedIdent {
-                span: Span {
-                    from: tokens.index,
-                    to: tokens.index + 1,
-                },
-            });
-            return None;
-        };
+        let ident = tokens.match_next(Token::as_ident)?;
         let ty = if tokens.first().as_comma().is_some() {
             None
         } else {
@@ -222,33 +147,8 @@ impl Display for SumTypeField {
         write!(f, "{}", self.0.data)?;
         if let Some(ty) = &self.1 {
             write!(f, " {}", ty)?;
-        } else {
         }
         Ok(())
-    }
-}
-
-pub struct ExpectedComma {
-    span: Span,
-}
-
-impl Error for ExpectedComma {
-    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> crate::error::MessageBuilder<'a> {
-        ctx.start(MessageKind::Error, "Expected `,`", self.span.from)
-            .print_line(self.span.from)
-            .print_point(self.span)
-    }
-}
-
-pub struct ExpectedRightSquare {
-    span: Span,
-}
-
-impl Error for ExpectedRightSquare {
-    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> crate::error::MessageBuilder<'a> {
-        ctx.start(MessageKind::Error, "Expected `]`", self.span.from)
-            .print_line(self.span.from)
-            .print_point(self.span)
     }
 }
 
@@ -276,26 +176,12 @@ impl Parser for SumType {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
         let left = tokens.match_next(Token::as_left_square)?;
 
-        if let Some(right) = tokens.match_next(Token::as_right_square) {
-            tokens.error(EmptySumType {
-                span: Span {
-                    from: left.span.from,
-                    to: right.span.to,
-                },
-            });
-            return None;
-        }
-
         let field = SumTypeField::parse(tokens)?;
         let mut fields = vec![field];
         let mut separators = Vec::new();
 
         loop {
             match tokens.first().clone() {
-                Token::Ident(ident) => {
-                    tokens.error(ExpectedComma { span: ident.span });
-                    return None;
-                }
                 Token::Comma(separator) => {
                     tokens.index += 1;
                     separators.push(separator);
@@ -312,23 +198,10 @@ impl Parser for SumType {
                     });
                 }
                 token => {
-                    tokens.error(ExpectedRightSquare { span: token.span() });
                     return None;
                 }
             }
         }
-    }
-}
-
-pub struct ExpectedType {
-    span: Span,
-}
-
-impl Error for ExpectedType {
-    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> crate::error::MessageBuilder<'a> {
-        ctx.start(MessageKind::Error, "Expected type", self.span.from)
-            .print_line(self.span.from)
-            .print_point(self.span)
     }
 }
 
@@ -342,31 +215,9 @@ impl Display for LabelledProductTypeField {
 
 impl Parser for LabelledProductTypeField {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
-        let Some(ident) = tokens.match_next(Token::as_ident) else {
-            tokens.error(ExpectedIdent {
-                span: tokens.second().span(),
-            });
-            return None;
-        };
-        let Some(ty) = Type::parse(tokens) else {
-            tokens.error(ExpectedType {
-                span: tokens.second().span(),
-            });
-            return None;
-        };
+        let ident = tokens.match_next(Token::as_ident)?;
+        let ty = Type::parse(tokens)?;
         Some(Self(ident, Box::new(ty)))
-    }
-}
-
-pub struct ExpectedRightCurly {
-    span: Span,
-}
-
-impl Error for ExpectedRightCurly {
-    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> crate::error::MessageBuilder<'a> {
-        ctx.start(MessageKind::Error, "Expected `}`", self.span.from)
-            .print_line(self.span.from)
-            .print_point(self.span)
     }
 }
 
@@ -399,10 +250,6 @@ impl Parser for LabelledProductType {
 
         loop {
             match tokens.first().clone() {
-                Token::Ident(ident) => {
-                    tokens.error(ExpectedComma { span: ident.span });
-                    return None;
-                }
                 Token::Comma(separator) => {
                     tokens.index += 1;
                     separators.push(separator);
@@ -419,7 +266,6 @@ impl Parser for LabelledProductType {
                     });
                 }
                 token => {
-                    tokens.error(ExpectedRightCurly { span: token.span() });
                     return None;
                 }
             }
@@ -459,7 +305,6 @@ impl Parser for UnlabelledProductType {
                 separators,
                 right,
             });
-        } else {
         }
 
         fields.push(Type::parse(tokens)?);
@@ -491,28 +336,31 @@ impl Parser for UnlabelledProductType {
 
 pub struct HoleType {
     tick: Tick,
-    ident: Ident,
+    ident: Option<Ident>,
 }
 
 impl Display for HoleType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{}", self.ident.data)
+        match &self.ident {
+            Some(ident) => write!(f, "'{}", ident.data),
+            None => write!(f, "'_"),
+        }
     }
 }
 
 impl Parser for HoleType {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
         let tick = tokens.match_next(Token::as_tick)?;
-        let Some(ident) = tokens.match_next(Token::as_ident) else {
-            tokens.error(ExpectedIdent {
-                span: Span {
-                    from: tokens.index,
-                    to: tokens.index + 1,
-                },
-            });
-            return None;
-        };
-        Some(Self { tick, ident })
+        if let Some(ident) = tokens.match_next(Token::as_ident) {
+            Some(Self {
+                tick,
+                ident: Some(ident),
+            })
+        } else if tokens.match_next(Token::as_underscore).is_some() {
+            Some(Self { tick, ident: None })
+        } else {
+            None
+        }
     }
 }
 
@@ -542,18 +390,6 @@ impl Parser for ProductType {
     }
 }
 
-pub struct ExpectedRightRound {
-    span: Span,
-}
-
-impl Error for ExpectedRightRound {
-    fn print_error<'a>(&self, ctx: &'a crate::error::Context) -> crate::error::MessageBuilder<'a> {
-        ctx.start(MessageKind::Error, "Expected `)`", self.span.from)
-            .print_line(self.span.from)
-            .print_point(self.span)
-    }
-}
-
 pub struct ArgsOther {
     left: LeftRound,
     inner: Box<Type>,
@@ -569,24 +405,8 @@ impl Display for ArgsOther {
 impl Parser for ArgsOther {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
         let left = tokens.match_next(Token::as_left_round)?;
-        let Some(inner) = Type::parse(tokens) else {
-            tokens.error(ExpectedType {
-                span: Span {
-                    from: tokens.index,
-                    to: tokens.index + 1,
-                },
-            });
-            return None;
-        };
-        let Some(right) = tokens.match_next(Token::as_right_round) else {
-            tokens.error(ExpectedRightRound {
-                span: Span {
-                    from: tokens.index,
-                    to: tokens.index + 1,
-                },
-            });
-            return None;
-        };
+        let inner = Type::parse(tokens)?;
+        let right = tokens.match_next(Token::as_right_round)?;
         Some(Self {
             left,
             inner: Box::new(inner),
@@ -687,7 +507,762 @@ impl Parser for Type {
     }
 }
 
-pub fn parse(tokens: Vec<Token>, errors: &mut Vec<Box<dyn Error>>) -> Option<Type> {
+pub struct SumDecl {
+    variant: Path,
+    value: Option<Expression>,
+}
+
+impl Display for SumDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.variant)?;
+        if let Some(value) = &self.value {
+            write!(f, " {}", value)?;
+        }
+        Ok(())
+    }
+}
+
+impl Parser for SumDecl {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let variant = Path::parse(tokens)?;
+        let value = Expression::parse(tokens);
+        Some(Self { variant, value })
+    }
+}
+
+pub struct LabelledProductDeclField {
+    field: Ident,
+    value: Expression,
+}
+
+impl Display for LabelledProductDeclField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.field.data, self.value)
+    }
+}
+
+impl Parser for LabelledProductDeclField {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let field = tokens.first().as_ident()?.clone();
+        let value = Expression::parse(tokens)?;
+        Some(Self { field, value })
+    }
+}
+
+pub struct LabelledProductDecl {
+    left: LeftCurly,
+    right: RightCurly,
+    fields: Vec<LabelledProductDeclField>,
+    separators: Vec<Comma>,
+}
+
+impl Display for LabelledProductDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ {} }}",
+            self.fields
+                .iter()
+                .map(|field| format!("{}", field))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+impl Parser for LabelledProductDecl {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let left = tokens.match_next(Token::as_left_curly)?;
+        let field = LabelledProductDeclField::parse(tokens)?;
+        let mut fields = vec![field];
+        let mut separators = Vec::new();
+
+        loop {
+            match tokens.first().clone() {
+                Token::Comma(separator) => {
+                    tokens.index += 1;
+                    separators.push(separator);
+                    let field = LabelledProductDeclField::parse(tokens)?;
+                    fields.push(field);
+                }
+                Token::RightCurly(right) => {
+                    tokens.index += 1;
+                    return Some(Self {
+                        left,
+                        fields,
+                        separators,
+                        right,
+                    });
+                }
+                token => {
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+pub struct UnlabelledProductDecl {
+    left: LeftCurly,
+    right: RightCurly,
+    fields: Vec<Expression>,
+    separators: Vec<Comma>,
+}
+
+impl Display for UnlabelledProductDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ {} }}",
+            self.fields
+                .iter()
+                .map(|field| format!("{}", field))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+impl Parser for UnlabelledProductDecl {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let left = tokens.match_next(Token::as_left_curly)?;
+        let mut fields = Vec::new();
+        let mut separators = Vec::new();
+        if let Some(right) = tokens.match_next(Token::as_right_curly) {
+            return Some(Self {
+                left,
+                fields,
+                separators,
+                right,
+            });
+        }
+
+        fields.push(Expression::parse(tokens)?);
+
+        loop {
+            match tokens.first().clone() {
+                Token::Comma(separator) => {
+                    tokens.index += 1;
+                    separators.push(separator.clone());
+                    let field = Expression::parse(tokens)?;
+                    fields.push(field);
+                }
+                Token::RightCurly(right) => {
+                    tokens.index += 1;
+                    return Some(Self {
+                        left,
+                        fields,
+                        separators,
+                        right,
+                    });
+                }
+                _ => {
+                    return None; // It's likely a labelled product decl
+                }
+            }
+        }
+    }
+}
+
+pub enum ProductDecl {
+    Unlabelled(UnlabelledProductDecl),
+    Labelled(LabelledProductDecl),
+}
+
+impl Display for ProductDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unlabelled(unlabelled) => write!(f, "{}", unlabelled),
+            Self::Labelled(labelled) => write!(f, "{}", labelled),
+        }
+    }
+}
+
+impl Parser for ProductDecl {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        if let Some(unlabelled) = UnlabelledProductDecl::parse(tokens) {
+            Some(Self::Unlabelled(unlabelled))
+        } else if let Some(labelled) = LabelledProductDecl::parse(tokens) {
+            Some(Self::Labelled(labelled))
+        } else {
+            None
+        }
+    }
+}
+
+pub struct Call {
+    path: Path,
+    left: LeftRound,
+    arguments: Vec<Expression>,
+    separators: Vec<Comma>,
+    right: RightRound,
+}
+
+impl Display for Call {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.path,
+            self.arguments
+                .iter()
+                .map(|arg| format!("{}", arg))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+impl Parser for Call {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let path = Path::parse(tokens)?;
+        let left = tokens.next().as_left_round()?.clone();
+        let mut arguments = Vec::new();
+        let mut separators = Vec::new();
+        if let Some(right) = tokens.match_next(Token::as_right_round) {
+            return Some(Self {
+                path,
+                left,
+                arguments,
+                separators,
+                right,
+            });
+        }
+
+        arguments.push(Expression::parse(tokens)?);
+
+        loop {
+            if let Some(separator) = tokens.match_next(Token::as_comma) {
+                separators.push(separator.clone());
+                arguments.push(Expression::parse(tokens)?);
+            } else if let Some(right) = tokens.match_next(Token::as_right_round) {
+                return Some(Self {
+                    path,
+                    left,
+                    arguments,
+                    separators,
+                    right: right.clone(),
+                });
+            } else {
+                return None;
+            }
+        }
+    }
+}
+
+pub enum ExpressionPart {
+    Literal(Literal),
+    Function(Function),
+    ProductDecl(ProductDecl),
+    Call(Call),
+    Type(Type),
+}
+
+impl Display for ExpressionPart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Literal(literal) => match literal.kind {
+                LiteralKind::String => write!(f, "\"{}\"", literal.data),
+                LiteralKind::Integer | LiteralKind::Decimal => write!(f, "{}", literal.data),
+            },
+            Self::Function(inner) => write!(f, "{}", inner),
+            Self::ProductDecl(product_decl) => write!(f, "{}", product_decl),
+            Self::Call(call) => write!(f, "{}", call),
+            Self::Type(ty) => write!(f, "{}", ty),
+        }
+    }
+}
+
+impl Parser for ExpressionPart {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        if let Some(literal) = tokens.match_next(Token::as_literal) {
+            Some(Self::Literal(literal))
+        } else if let Some(function) = Function::parse(tokens) {
+            Some(Self::Function(function))
+        } else if let Some(product_decl) = ProductDecl::parse(tokens) {
+            Some(Self::ProductDecl(product_decl))
+        } else if let Some(call) = Call::parse(tokens) {
+            Some(Self::Call(call))
+        } else if let Some(ty) = Type::parse(tokens) {
+            Some(Self::Type(ty))
+        } else {
+            None
+        }
+    }
+}
+
+pub struct Expression {
+    parts: Vec<ExpressionPart>,
+    separators: Vec<Dot>,
+}
+
+impl Display for Expression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.parts
+                .iter()
+                .map(|part| format!("{}", part))
+                .collect::<Vec<String>>()
+                .join(".")
+        )
+    }
+}
+
+impl Parser for Expression {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let mut parts = vec![ExpressionPart::parse(tokens)?];
+        let mut separators = Vec::new();
+        loop {
+            if let Some(separator) = tokens.match_next(Token::as_dot) {
+                separators.push(separator);
+                parts.push(ExpressionPart::parse(tokens)?);
+            } else {
+                return Some(Self { parts, separators });
+            }
+        }
+    }
+}
+
+pub struct UnlabelledDestructure {
+    ty: Type,
+    left: LeftCurly,
+    fields: Vec<Assignment>,
+    separators: Vec<Comma>,
+    right: RightCurly,
+}
+
+impl Display for UnlabelledDestructure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{{{}}}",
+            self.ty,
+            self.fields
+                .iter()
+                .map(|field| format!("{}", field))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+impl Parser for UnlabelledDestructure {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let ty = Type::parse(tokens)?;
+        let left = tokens.match_next(Token::as_left_curly)?;
+        let mut fields = vec![Assignment::parse(tokens)?];
+        let mut separators = Vec::new();
+
+        loop {
+            if let Some(separator) = tokens.match_next(Token::as_comma) {
+                separators.push(separator);
+                fields.push(Assignment::parse(tokens)?);
+            } else if let Some(right) = tokens.match_next(Token::as_right_curly) {
+                return Some(Self {
+                    ty,
+                    left,
+                    fields,
+                    separators,
+                    right,
+                });
+            } else {
+                return None;
+            }
+        }
+    }
+}
+
+pub struct LabelledDestructure {
+    ty: Type,
+    left: LeftCurly,
+    fields: Vec<(Ident, Assignment)>,
+    separators: Vec<Comma>,
+    right: RightCurly,
+}
+
+impl Display for LabelledDestructure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{{{}}}",
+            self.ty,
+            self.fields
+                .iter()
+                .map(|(ident, assignment)| format!("{} {}", ident.data, assignment))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+impl Parser for LabelledDestructure {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let ty = Type::parse(tokens)?;
+        let left = tokens.match_next(Token::as_left_curly)?;
+        let mut fields = vec![(
+            tokens.match_next(Token::as_ident)?,
+            Assignment::parse(tokens)?,
+        )];
+        let mut separators = Vec::new();
+        loop {
+            if let Some(separator) = tokens.match_next(Token::as_comma) {
+                separators.push(separator);
+                fields.push((
+                    tokens.match_next(Token::as_ident)?,
+                    Assignment::parse(tokens)?,
+                ));
+            } else if let Some(right) = tokens.match_next(Token::as_right_curly) {
+                return Some(Self {
+                    ty,
+                    left,
+                    fields,
+                    separators,
+                    right,
+                });
+            } else {
+                return None;
+            }
+        }
+    }
+}
+
+pub struct SumMatch {
+    path: Path,
+    assignment: Box<Assignment>,
+}
+
+impl Display for SumMatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.path, self.assignment)
+    }
+}
+
+impl Parser for SumMatch {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let path = Path::parse(tokens)?;
+        let assignment = Box::new(Assignment::parse(tokens)?);
+        Some(Self { path, assignment })
+    }
+}
+
+pub struct TypedIdent {
+    ident: Ident,
+    colon: Colon,
+    ty: Type,
+}
+
+impl Display for TypedIdent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.ident.data, self.ty)
+    }
+}
+
+impl Parser for TypedIdent {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let ident = tokens.match_next(Token::as_ident)?;
+        let colon = tokens.match_next(Token::as_colon)?;
+        let ty = Type::parse(tokens)?;
+        Some(Self { ident, colon, ty })
+    }
+}
+
+pub enum Assignment {
+    SumMatch(SumMatch),
+    TypedIdent(TypedIdent),
+    Ident(Ident),
+    UnlabelledDestructure(UnlabelledDestructure),
+    LabelledDestructure(LabelledDestructure),
+    Underscore(Underscore),
+}
+
+impl Display for Assignment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SumMatch(inner) => write!(f, "{}", inner),
+            Self::TypedIdent(inner) => write!(f, "{}", inner),
+            Self::Ident(inner) => write!(f, "{}", inner.data),
+            Self::UnlabelledDestructure(inner) => write!(f, "{}", inner),
+            Self::LabelledDestructure(inner) => write!(f, "{}", inner),
+            Self::Underscore(inner) => write!(f, "_"),
+        }
+    }
+}
+
+impl Parser for Assignment {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        if let Some(sum_match) = SumMatch::parse(tokens) {
+            Some(Self::SumMatch(sum_match))
+        } else if let Some(typed_ident) = TypedIdent::parse(tokens) {
+            Some(Self::TypedIdent(typed_ident))
+        } else if let Some(ident) = tokens.match_next(Token::as_ident) {
+            Some(Self::Ident(ident))
+        } else if let Some(unlabelled) = UnlabelledDestructure::parse(tokens) {
+            Some(Self::UnlabelledDestructure(unlabelled))
+        } else if let Some(labelled) = LabelledDestructure::parse(tokens) {
+            Some(Self::LabelledDestructure(labelled))
+        } else if let Some(underscore) = tokens.match_next(Token::as_underscore) {
+            Some(Self::Underscore(underscore))
+        } else {
+            None
+        }
+    }
+}
+
+pub struct MultilineBody {
+    left: LeftCurly,
+    statements: Vec<Statement>,
+    expression: Option<Expression>,
+    right: RightCurly,
+}
+
+impl Display for MultilineBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.expression {
+            Some(expression) => write!(
+                f,
+                "{{\n{}{}\n}}",
+                self.statements
+                    .iter()
+                    .map(|statement| String::from("\t") + &format!("{}", statement) + "\n")
+                    .collect::<Vec<String>>()
+                    .join(""),
+                format!("\t{}", expression)
+            ),
+            None => write!(
+                f,
+                "{{\n{}}}",
+                self.statements
+                    .iter()
+                    .map(|statement| String::from("\t") + &format!("{}", statement) + "\n")
+                    .collect::<Vec<String>>()
+                    .join("")
+            ),
+        }
+    }
+}
+
+impl Parser for MultilineBody {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let left = tokens.match_next(Token::as_left_curly)?;
+        let mut statements = Vec::new();
+        loop {
+            let Some(statement) = Statement::parse(tokens) else {
+                break;
+            };
+            statements.push(statement)
+        }
+
+        if let Some(right) = tokens.match_next(Token::as_right_curly) {
+            Some(Self {
+                left,
+                statements,
+                expression: None,
+                right,
+            })
+        } else {
+            let expression = Expression::parse(tokens)?;
+            let right = tokens.match_next(Token::as_right_curly)?;
+            Some(Self {
+                left,
+                statements,
+                expression: Some(expression),
+                right,
+            })
+        }
+    }
+}
+
+pub enum Body {
+    Inline(Expression),
+    Multiline(MultilineBody),
+}
+
+impl Display for Body {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Inline(inner) => write!(f, "{}", inner),
+            Self::Multiline(inner) => write!(f, "{}", inner),
+        }
+    }
+}
+
+impl Parser for Body {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        if let Some(expression) = Expression::parse(tokens) {
+            Some(Self::Inline(expression))
+        } else if let Some(multiline) = MultilineBody::parse(tokens) {
+            Some(Self::Multiline(multiline))
+        } else {
+            None
+        }
+    }
+}
+
+pub struct Function {
+    left: Pipe,
+    assignment: Option<Assignment>,
+    right: Pipe,
+    body: Body,
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.assignment {
+            Some(assignment) => write!(f, "|{}| {}", assignment, self.body),
+            None => write!(f, "|| {}", self.body),
+        }
+    }
+}
+
+impl Parser for Function {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let left = tokens.match_next(Token::as_pipe)?;
+        let (assignment, right) = if let Some(right) = tokens.match_next(Token::as_pipe) {
+            (None, right)
+        } else {
+            let assignment = Assignment::parse(tokens)?;
+            let right = tokens.match_next(Token::as_pipe)?;
+            (Some(assignment), right)
+        };
+        let body = Body::parse(tokens)?;
+        Some(Self {
+            left,
+            assignment,
+            right,
+            body,
+        })
+    }
+}
+
+pub struct BaseDecl {
+    lt: Let,
+    base: Base,
+    ident: Ident,
+    colon: Colon,
+    ty: Type,
+    semicolon: Semicolon,
+}
+
+impl Display for BaseDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "let base {}: {};", self.ident.data, self.ty)
+    }
+}
+
+impl Parser for BaseDecl {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let lt = tokens.match_next(Token::as_let)?;
+        let base = tokens.match_next(Token::as_base)?;
+        let ident = tokens.match_next(Token::as_ident)?;
+        let colon = tokens.match_next(Token::as_colon)?;
+        let ty = Type::parse(tokens)?;
+        let semicolon = tokens.match_next(Token::as_semicolon)?;
+        Some(Self {
+            lt,
+            base,
+            ident,
+            colon,
+            ty,
+            semicolon,
+        })
+    }
+}
+
+pub struct VariableDecl {
+    lt: Let,
+    assignment: Assignment,
+    equals: Equals,
+    expression: Expression,
+    semicolon: Semicolon,
+}
+
+impl Display for VariableDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "let {} = {};", self.assignment, self.expression)
+    }
+}
+
+impl Parser for VariableDecl {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let lt = tokens.match_next(Token::as_let)?;
+        let assignment = Assignment::parse(tokens)?;
+        let equals = tokens.match_next(Token::as_equals)?;
+        let expression = Expression::parse(tokens)?;
+        let semicolon = tokens.match_next(Token::as_semicolon)?;
+        Some(Self {
+            lt,
+            assignment,
+            equals,
+            expression,
+            semicolon,
+        })
+    }
+}
+
+pub enum Statement {
+    // ModuleDecl(Module),
+    BaseDecl(BaseDecl),
+    VariableDecl(VariableDecl),
+    Expression((Expression, Semicolon)),
+}
+
+impl Display for Statement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BaseDecl(inner) => write!(f, "{}", inner),
+            Self::VariableDecl(inner) => write!(f, "{}", inner),
+            Self::Expression((expression, _)) => write!(f, "{};", expression),
+        }
+    }
+}
+
+impl Parser for Statement {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        if let Some(base_decl) = BaseDecl::parse(tokens) {
+            Some(Self::BaseDecl(base_decl))
+        } else if let Some(variable_decl) = VariableDecl::parse(tokens) {
+            Some(Self::VariableDecl(variable_decl))
+        } else {
+            let expression = Expression::parse(tokens)?;
+            let semicolon = tokens.match_next(Token::as_semicolon)?;
+            Some(Self::Expression((expression, semicolon)))
+        }
+    }
+}
+
+pub struct Module {
+    declarations: Vec<Statement>,
+}
+
+impl Display for Module {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.declarations
+                .iter()
+                .map(|declaration| format!("{}", declaration))
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
+    }
+}
+
+impl Parser for Module {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let mut declarations = Vec::new();
+        loop {
+            let Some(declaration) = Statement::parse(tokens) else {
+                return Some(Self { declarations });
+            };
+            declarations.push(declaration)
+        }
+    }
+}
+
+pub fn parse(tokens: Vec<Token>, errors: &mut Vec<Box<dyn Error>>) -> Option<Module> {
     let mut tokens = Tokens::new(tokens, errors);
-    Type::parse(&mut tokens)
+    Module::parse(&mut tokens)
 }

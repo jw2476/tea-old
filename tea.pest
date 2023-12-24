@@ -45,7 +45,7 @@ String  =  { Quote ~ (!Quote ~ ANY)* ~ Quote }
 Integer =  { Digit+ }
 Decimal =  { Digit+ ~ "." ~ Digit+ }
 
-SumDecl                    = { Ident ~ Expr }
+SumDecl                    = { Path ~ Expr }
 LabelledProductDeclField   = { Ident ~ Space ~ Expr }
 LabelledProductDecl        = { LeftCurly ~ LabelledProductDeclField ~ (Comma ~ Ignore ~ LabelledProductDeclField)* ~ RightCurly }
 UnlabelledProductDeclField = { Expr }

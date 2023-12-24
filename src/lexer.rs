@@ -72,6 +72,10 @@ pub struct Semicolon {
 pub struct Pipe {
     pub span: Span,
 }
+#[derive(Clone, Debug)]
+pub struct Underscore {
+    pub span: Span,
+}
 
 // Keywords
 #[derive(Clone, Debug)]
@@ -136,6 +140,7 @@ pub enum Token {
     Equals(Equals),
     Semicolon(Semicolon),
     Pipe(Pipe),
+    Underscore(Underscore),
 
     Let(Let),
     Base(Base),
@@ -251,6 +256,14 @@ impl Token {
         }
     }
 
+    pub fn as_underscore(&self) -> Option<&Underscore> {
+        if let Self::Underscore(token) = self {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
     pub fn as_double_colon(&self) -> Option<&DoubleColon> {
         if let Self::DoubleColon(token) = self {
             Some(token)
@@ -349,6 +362,7 @@ impl Token {
             Self::Semicolon(inner) => inner.span,
             Self::Pipe(inner) => inner.span,
             Self::Arrow(inner) => inner.span,
+            Self::Underscore(inner) => inner.span,
 
             Self::Let(inner) => inner.span,
             Self::Base(inner) => inner.span,
@@ -506,6 +520,7 @@ impl<'a> Cursor<'a> {
             '=' => Token::Equals(Equals { span: span(self) }),
             ';' => Token::Semicolon(Semicolon { span: span(self) }),
             '|' => Token::Pipe(Pipe { span: span(self) }),
+            '_' => Token::Underscore(Underscore { span: span(self) }),
             '-' => {
                 if self.match_next('>') {
                     Token::Arrow(Arrow { span: span(self) })
@@ -548,6 +563,11 @@ impl<'a> Cursor<'a> {
                 while self.first()?.is_digit(10) || self.first()? == '.' {
                     let c = self.next()?;
                     if c == '.' {
+                        if !self.first()?.is_digit(10) {
+                            // The dot is a dot call
+                            self.index -= 1;
+                            break;
+                        }
                         if decimal {
                             self.error(LexicalError::TooManyDecimalPoints(TooManyDecimalPoints {
                                 span: Span {
@@ -579,11 +599,17 @@ impl<'a> Cursor<'a> {
                 while self.first()?.is_alphanumeric() {
                     data.push(self.next()?)
                 }
-
-                Token::Ident(Ident {
-                    span: span(self),
-                    data,
-                })
+                match data.as_str() {
+                    "let" => Token::Let(Let { span: span(self) }),
+                    "base" => Token::Base(Base { span: span(self) }),
+                    "pub" => Token::Pub(Pub { span: span(self) }),
+                    "type" => Token::Type(Type { span: span(self) }),
+                    "module" => Token::Module(Module { span: span(self) }),
+                    data => Token::Ident(Ident {
+                        span: span(self),
+                        data: data.to_owned(),
+                    }),
+                }
             }
             ' ' | '\n' => return self.get(),
             c => {
@@ -608,8 +634,8 @@ pub fn tokenize<'a>(file: &File, errors: &'a mut Vec<Box<dyn Error>>) -> Vec<Tok
     let mut tokens = cursor.iter().collect::<Vec<Token>>();
     tokens.push(Token::EOF(EOF {
         span: Span {
-            from: file.content.len() - 2,
-            to: file.content.len() - 1,
+            from: file.content.len() - 1,
+            to: file.content.len(),
         },
     }));
     tokens

@@ -40,6 +40,8 @@ fn build(build: Build) -> anyhow::Result<()> {
     }
     if let Some(ast) = ast {
         println!("{ast}")
+    } else {
+        panic!("Failed to parse");
     }
 
     Ok(())

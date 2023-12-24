@@ -1,1 +1,21 @@
+let base write: {Writer, 'a} -> Writer;
+let Vec2: type = {u32, u32};
+let write: {Writer, Vec2} -> Writer = |{Writer, Vec2}{writer, vec}| writer
+  .write("(")
+  .write(vec.0)
+  .write(", ")
+  .write(vec.1)
+  .write(")");
+let writeln: {Writer, 'a} -> Writer = |{Writer, Vec2}{writer, value}| writer.write(value).write("\n");
 
+let main: {} -> {} = || {
+  let a: usize = 4;
+  let b: Vec2 = {0, 0};
+  std::io::stderr()
+    .writeln("Hello, World!")
+    .write(a)
+    .write(" ")
+    .writeln(b)
+    .flush()
+    .unwrap();
+};
