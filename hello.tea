@@ -1,21 +1,31 @@
-let base write: {Writer, 'a} -> Writer;
-let Vec2: type = {u32, u32};
-let write: {Writer, Vec2} -> Writer = |{Writer, Vec2}{writer, vec}| writer
-  .write("(")
-  .write(vec.0)
-  .write(", ")
-  .write(vec.1)
-  .write(")");
-let writeln: {Writer, 'a} -> Writer = |{Writer, Vec2}{writer, value}| writer.write(value).write("\n");
+let Ptr: type -> type = |inner| {}; // magik provided by compiler
+let deref: Ptr('a) -> 'a = |ptr| {}; // more compiler provided magik
+
+let Ref: type -> type = |a| { pointer Ptr(a) };
+
+let Mut: type -> type = |a| { pointer Ptr(a) };
+let modify: {Mut('a), 'a -> 'a} -> Mut('a) = |_{mut, f}| {
+    mut.deref() = f(mut.deref());
+    mut
+};
+let alloc: 'a -> Ptr('a) = |data| {}; // TODO
+let into: 'a -> Mut('a) = |data| _{ pointer data.alloc() }; // cba to deal with lifetimes
+
+let file: module = {
+  let test: {} -> {} = || 0;
+  let Filesystem: type = opaque;
+  let get: {} -> Filesystem = || {};
+  // These would be implemented but I'm ignoring it for now
+  let write: {Filesystem, Path, String} -> {} = |_{fs, path, content}| {};
+  let read: {Filesystem, Path} -> String = |_{fs, path}| {};
+  let create: {Filesystem, Path} -> {} = |_{fs, path}| {};
+};
 
 let main: {} -> {} = || {
-  let a: usize = 4;
-  let b: Vec2 = {0, 0};
-  std::io::stderr()
-    .writeln("Hello, World!")
-    .write(a)
-    .write(" ")
-    .writeln(b)
-    .flush()
-    .unwrap();
+  let fs: file::Filesystem = file::Filesystem::get();
+  fs.write("test.txt", "Hello, World!");
+  let content = fs.read("test.txt");
+  std::io::stderr().writeln(content);
+  let mutable: Mut(u32) = 0.into(); 
+  mutable.modify(|x| x.add(2));
 };

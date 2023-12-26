@@ -612,6 +612,20 @@ impl<'a> Cursor<'a> {
                 }
             }
             ' ' | '\n' => return self.get(),
+            '/' => {
+                if !self.match_next('/') {
+                    self.error(LexicalError::UnknownCharacter(UnknownCharacter {
+                        span: span(self),
+                        c: '/',
+                    }))
+                }
+
+                loop {
+                    if let Some('\n') = self.next() {
+                        return self.get();
+                    }
+                }
+            }
             c => {
                 self.error(LexicalError::UnknownCharacter(UnknownCharacter {
                     span: span(self),

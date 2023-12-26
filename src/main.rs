@@ -32,7 +32,7 @@ fn build(build: Build) -> anyhow::Result<()> {
         ctx.print_errors(&errors);
         return Ok(());
     }
-    let ast = parser::parse(tokens, &mut errors);
+    let ast = parser::parse(tokens);
     if !errors.is_empty() {
         let ctx = error::Context::new(file);
         ctx.print_errors(&errors);

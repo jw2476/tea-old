@@ -9,19 +9,14 @@ use crate::{
     },
 };
 
-pub struct Tokens<'a> {
+pub struct Tokens {
     tokens: Vec<Token>,
     index: usize,
-    errors: &'a mut Vec<Box<dyn Error>>,
 }
 
-impl<'a> Tokens<'a> {
-    pub fn new(tokens: Vec<Token>, errors: &'a mut Vec<Box<dyn Error>>) -> Self {
-        Self {
-            tokens,
-            index: 0,
-            errors,
-        }
+impl Tokens {
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Self { tokens, index: 0 }
     }
 
     pub fn first(&self) -> &Token {
@@ -48,10 +43,6 @@ impl<'a> Tokens<'a> {
             self.index += 1;
         }
         result
-    }
-
-    pub fn error<E: Error + 'static>(&mut self, error: E) {
-        self.errors.push(Box::new(error))
     }
 }
 
@@ -418,6 +409,7 @@ impl Parser for ArgsOther {
 pub enum Args {
     Sum(SumType),
     Product(ProductType),
+    Call(Call),
     Type(crate::lexer::Type),
     Module(crate::lexer::Module),
     Path(Path),
@@ -430,6 +422,7 @@ impl Display for Args {
         match self {
             Self::Sum(inner) => write!(f, "{}", inner),
             Self::Product(inner) => write!(f, "{}", inner),
+            Self::Call(inner) => write!(f, "{}", inner),
             Self::Type(_) => write!(f, "type"),
             Self::Module(_) => write!(f, "module"),
             Self::Path(inner) => write!(f, "{}", inner),
@@ -445,6 +438,8 @@ impl Parser for Args {
             Some(Self::Sum(sum))
         } else if let Some(product) = ProductType::parse(tokens) {
             Some(Self::Product(product))
+        } else if let Some(call) = Call::parse(tokens) {
+            Some(Self::Call(call))
         } else if let Some(ty) = tokens.match_next(Token::as_type) {
             Some(Self::Type(ty))
         } else if let Some(module) = tokens.match_next(Token::as_module) {
@@ -465,6 +460,7 @@ pub enum Type {
     Function(FunctionType),
     Sum(SumType),
     Product(ProductType),
+    Call(Call),
     Type(crate::lexer::Type),
     Module(crate::lexer::Module),
     Path(Path),
@@ -477,6 +473,7 @@ impl Display for Type {
             Self::Function(inner) => write!(f, "{}", inner),
             Self::Sum(inner) => write!(f, "{}", inner),
             Self::Product(inner) => write!(f, "{}", inner),
+            Self::Call(inner) => write!(f, "{}", inner),
             Self::Type(_) => write!(f, "type"),
             Self::Module(_) => write!(f, "module"),
             Self::Path(inner) => write!(f, "{}", inner),
@@ -493,6 +490,8 @@ impl Parser for Type {
             Some(Self::Sum(sum))
         } else if let Some(product) = ProductType::parse(tokens) {
             Some(Self::Product(product))
+        } else if let Some(call) = Call::parse(tokens) {
+            Some(Self::Call(call))
         } else if let Some(ty) = tokens.match_next(Token::as_type) {
             Some(Self::Type(ty))
         } else if let Some(module) = tokens.match_next(Token::as_module) {
@@ -543,13 +542,14 @@ impl Display for LabelledProductDeclField {
 
 impl Parser for LabelledProductDeclField {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
-        let field = tokens.first().as_ident()?.clone();
+        let field = tokens.match_next(Token::as_ident)?.clone();
         let value = Expression::parse(tokens)?;
         Some(Self { field, value })
     }
 }
 
 pub struct LabelledProductDecl {
+    ty: Option<Type>,
     left: LeftCurly,
     right: RightCurly,
     fields: Vec<LabelledProductDeclField>,
@@ -558,20 +558,37 @@ pub struct LabelledProductDecl {
 
 impl Display for LabelledProductDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{ {} }}",
-            self.fields
-                .iter()
-                .map(|field| format!("{}", field))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
+        match &self.ty {
+            Some(ty) => write!(
+                f,
+                "{}{{{}}}",
+                ty,
+                self.fields
+                    .iter()
+                    .map(|field| format!("{}", field))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            None => write!(
+                f,
+                "_{{{}}}",
+                self.fields
+                    .iter()
+                    .map(|field| format!("{}", field))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+        }
     }
 }
 
 impl Parser for LabelledProductDecl {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let ty = if let Some(_) = tokens.match_next(Token::as_underscore) {
+            None
+        } else {
+            Some(Type::parse(tokens)?)
+        };
         let left = tokens.match_next(Token::as_left_curly)?;
         let field = LabelledProductDeclField::parse(tokens)?;
         let mut fields = vec![field];
@@ -588,6 +605,7 @@ impl Parser for LabelledProductDecl {
                 Token::RightCurly(right) => {
                     tokens.index += 1;
                     return Some(Self {
+                        ty,
                         left,
                         fields,
                         separators,
@@ -603,6 +621,7 @@ impl Parser for LabelledProductDecl {
 }
 
 pub struct UnlabelledProductDecl {
+    ty: Option<Type>,
     left: LeftCurly,
     right: RightCurly,
     fields: Vec<Expression>,
@@ -611,25 +630,43 @@ pub struct UnlabelledProductDecl {
 
 impl Display for UnlabelledProductDecl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{ {} }}",
-            self.fields
-                .iter()
-                .map(|field| format!("{}", field))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
+        match &self.ty {
+            Some(ty) => write!(
+                f,
+                "{}{{{}}}",
+                ty,
+                self.fields
+                    .iter()
+                    .map(|field| format!("{}", field))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            None => write!(
+                f,
+                "_{{{}}}",
+                self.fields
+                    .iter()
+                    .map(|field| format!("{}", field))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+        }
     }
 }
 
 impl Parser for UnlabelledProductDecl {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let ty = if let Some(_) = tokens.match_next(Token::as_underscore) {
+            None
+        } else {
+            Some(Type::parse(tokens)?)
+        };
         let left = tokens.match_next(Token::as_left_curly)?;
         let mut fields = Vec::new();
         let mut separators = Vec::new();
         if let Some(right) = tokens.match_next(Token::as_right_curly) {
             return Some(Self {
+                ty,
                 left,
                 fields,
                 separators,
@@ -650,6 +687,7 @@ impl Parser for UnlabelledProductDecl {
                 Token::RightCurly(right) => {
                     tokens.index += 1;
                     return Some(Self {
+                        ty,
                         left,
                         fields,
                         separators,
@@ -826,7 +864,7 @@ impl Parser for Expression {
 }
 
 pub struct UnlabelledDestructure {
-    ty: Type,
+    ty: Option<Type>,
     left: LeftCurly,
     fields: Vec<Assignment>,
     separators: Vec<Comma>,
@@ -835,22 +873,37 @@ pub struct UnlabelledDestructure {
 
 impl Display for UnlabelledDestructure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{{{}}}",
-            self.ty,
-            self.fields
-                .iter()
-                .map(|field| format!("{}", field))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
+        match &self.ty {
+            Some(ty) => write!(
+                f,
+                "{}{{{}}}",
+                ty,
+                self.fields
+                    .iter()
+                    .map(|field| format!("{}", field))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            None => write!(
+                f,
+                "_{{{}}}",
+                self.fields
+                    .iter()
+                    .map(|field| format!("{}", field))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+        }
     }
 }
 
 impl Parser for UnlabelledDestructure {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
-        let ty = Type::parse(tokens)?;
+        let ty = if let Some(_) = tokens.match_next(Token::as_underscore) {
+            None
+        } else {
+            Some(Type::parse(tokens)?)
+        };
         let left = tokens.match_next(Token::as_left_curly)?;
         let mut fields = vec![Assignment::parse(tokens)?];
         let mut separators = Vec::new();
@@ -875,7 +928,7 @@ impl Parser for UnlabelledDestructure {
 }
 
 pub struct LabelledDestructure {
-    ty: Type,
+    ty: Option<Type>,
     left: LeftCurly,
     fields: Vec<(Ident, Assignment)>,
     separators: Vec<Comma>,
@@ -884,22 +937,37 @@ pub struct LabelledDestructure {
 
 impl Display for LabelledDestructure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{{{}}}",
-            self.ty,
-            self.fields
-                .iter()
-                .map(|(ident, assignment)| format!("{} {}", ident.data, assignment))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
+        match &self.ty {
+            Some(ty) => write!(
+                f,
+                "{}{{{}}}",
+                ty,
+                self.fields
+                    .iter()
+                    .map(|(ident, assignment)| format!("{} {}", ident.data, assignment))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            None => write!(
+                f,
+                "_{{{}}}",
+                self.fields
+                    .iter()
+                    .map(|(ident, assignment)| format!("{} {}", ident.data, assignment))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+        }
     }
 }
 
 impl Parser for LabelledDestructure {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
-        let ty = Type::parse(tokens)?;
+        let ty = if let Some(_) = tokens.match_next(Token::as_underscore) {
+            None
+        } else {
+            Some(Type::parse(tokens)?)
+        };
         let left = tokens.match_next(Token::as_left_curly)?;
         let mut fields = vec![(
             tokens.match_next(Token::as_ident)?,
@@ -1201,18 +1269,101 @@ impl Parser for VariableDecl {
     }
 }
 
+pub struct ModuleDecl {
+    lt: Let,
+    ident: Ident,
+    colon: Colon,
+    m: crate::lexer::Module,
+    equals: Equals,
+    left: LeftCurly,
+    module: Module,
+    right: RightCurly,
+    semicolon: Semicolon,
+}
+
+impl Display for ModuleDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "let {}: module = {{\n{}\n}}",
+            self.ident.data,
+            format!("{}", self.module)
+                .split('\n')
+                .map(|line| String::from("\t") + line)
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
+    }
+}
+
+impl Parser for ModuleDecl {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let lt = tokens.match_next(Token::as_let)?;
+        let ident = tokens.match_next(Token::as_ident)?;
+        let colon = tokens.match_next(Token::as_colon)?;
+        let m = tokens.match_next(Token::as_module)?;
+        let equals = tokens.match_next(Token::as_equals)?;
+        let left = tokens.match_next(Token::as_left_curly)?;
+        let module = Module::parse(tokens)?;
+        let right = tokens.match_next(Token::as_right_curly)?;
+        let semicolon = tokens.match_next(Token::as_semicolon)?;
+        Some(Self {
+            lt,
+            ident,
+            colon,
+            m,
+            equals,
+            left,
+            module,
+            right,
+            semicolon,
+        })
+    }
+}
+
+pub struct Reassignment {
+    left: Expression,
+    equals: Equals,
+    right: Expression,
+    semicolon: Semicolon,
+}
+
+impl Display for Reassignment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} = {}", self.left, self.right)
+    }
+}
+
+impl Parser for Reassignment {
+    fn try_parse(tokens: &mut Tokens) -> Option<Self> {
+        let left = Expression::parse(tokens)?;
+        let equals = tokens.match_next(Token::as_equals)?;
+        let right = Expression::parse(tokens)?;
+        let semicolon = tokens.match_next(Token::as_semicolon)?;
+        Some(Self {
+            left,
+            equals,
+            right,
+            semicolon,
+        })
+    }
+}
+
 pub enum Statement {
-    // ModuleDecl(Module),
+    ModuleDecl(ModuleDecl),
     BaseDecl(BaseDecl),
     VariableDecl(VariableDecl),
+    Reassignment(Reassignment),
     Expression((Expression, Semicolon)),
 }
 
 impl Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ModuleDecl(inner) => write!(f, "{}", inner),
             Self::BaseDecl(inner) => write!(f, "{}", inner),
             Self::VariableDecl(inner) => write!(f, "{}", inner),
+            Self::Reassignment(inner) => write!(f, "{}", inner),
             Self::Expression((expression, _)) => write!(f, "{};", expression),
         }
     }
@@ -1220,10 +1371,14 @@ impl Display for Statement {
 
 impl Parser for Statement {
     fn try_parse(tokens: &mut Tokens) -> Option<Self> {
-        if let Some(base_decl) = BaseDecl::parse(tokens) {
+        if let Some(module_decl) = ModuleDecl::parse(tokens) {
+            Some(Self::ModuleDecl(module_decl))
+        } else if let Some(base_decl) = BaseDecl::parse(tokens) {
             Some(Self::BaseDecl(base_decl))
         } else if let Some(variable_decl) = VariableDecl::parse(tokens) {
             Some(Self::VariableDecl(variable_decl))
+        } else if let Some(reassignment) = Reassignment::parse(tokens) {
+            Some(Self::Reassignment(reassignment))
         } else {
             let expression = Expression::parse(tokens)?;
             let semicolon = tokens.match_next(Token::as_semicolon)?;
@@ -1262,7 +1417,34 @@ impl Parser for Module {
     }
 }
 
-pub fn parse(tokens: Vec<Token>, errors: &mut Vec<Box<dyn Error>>) -> Option<Module> {
-    let mut tokens = Tokens::new(tokens, errors);
+pub fn parse(tokens: Vec<Token>) -> Option<Module> {
+    let mut tokens = Tokens::new(tokens);
     Module::parse(&mut tokens)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{file::FileRegistry, lexer::tokenize};
+
+    use super::*;
+
+    fn ignore_whitespace(input: &str) -> String {
+        input
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+    }
+
+    #[test]
+    pub fn test_hello_world() {
+        let mut registry = FileRegistry::new();
+        let file = registry.open("tests/hello_world.tea").unwrap();
+        let mut errors = Vec::new();
+        let tokens = tokenize(file, &mut errors);
+        assert!(errors.is_empty());
+        assert_eq!(
+            ignore_whitespace(&file.content),
+            ignore_whitespace(&format!("{}", parse(tokens).unwrap()))
+        );
+    }
 }
